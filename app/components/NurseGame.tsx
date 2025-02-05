@@ -1,13 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "@/app/firebase";
 import { signOut } from "firebase/auth";
+import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+const firestore = getFirestore();
 
 const challenges = [
   "Challenge 1",
@@ -27,20 +30,40 @@ const NurseGame = () => {
   const [clickedItems, setClickedItems] = useState<{ [key: number]: { [key: string]: Set<string> } }>({});
   const [user] = useAuthState(auth);
 
-  const startAssessment = (challengeIndex: number, assessmentType: string) => {
-    setCurrentAssessment({ challenge: challengeIndex, type: assessmentType });
-    setClickedItems((prev) => ({
-      ...prev,
-      [challengeIndex]: {
-        ...prev[challengeIndex],
-        [assessmentType]: prev[challengeIndex]?.[assessmentType] || new Set(),
-      },
-    }));
-  };
+  useEffect(() => {
+    if (user) {
+      const loadProgress = async () => {
+        const userDoc = await getDoc(doc(firestore, "userProgress", user.uid));
+        if (userDoc.exists()) {
+          setAssessmentCompletion(userDoc.data().assessmentCompletion || {});
+          setClickedItems(userDoc.data().clickedItems || {});
+        }
+      };
+      loadProgress();
+    }
+  }, [user]);
 
-  const handleLogout = async () => {
-    await signOut(auth);
+  const saveProgress = async () => {
+    if (user) {
+      const clickedItemsToSave = Object.fromEntries(
+        Object.entries(clickedItems).map(([challenge, types]) => [
+          challenge,
+          Object.fromEntries(Object.entries(types).map(([type, set]) => [type, Array.from(set)])),
+        ])
+      );
+  
+      await setDoc(doc(firestore, "userProgress", user.uid), {
+        assessmentCompletion,
+        clickedItems: clickedItemsToSave,
+      });
+    }
   };
+  
+  useEffect(() => {
+    if (user) {
+      saveProgress();
+    }
+  }, [assessmentCompletion, clickedItems]);
 
   const handleItemClick = (challengeIndex: number, assessmentType: string, item: string) => {
     setClickedItems((prev) => {
@@ -79,38 +102,36 @@ const NurseGame = () => {
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-6">
       <div className="flex justify-between w-full max-w-4xl mb-4">
         <h1 className="text-2xl font-bold">Nurse Gamification Challenge</h1>
-        {user && <Button className="bg-red-500 text-white" onClick={handleLogout}>Logout</Button>}
+        <div className="flex gap-4">
+          {user && <Button className="bg-yellow-500 text-white" onClick={() => setAssessmentCompletion({})}>Reset Progress</Button>}
+          {user && <Button className="bg-red-500 text-white" onClick={async () => await signOut(auth)}>Logout</Button>}
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
         {challenges.map((challenge, index) => (
           <Card key={index} className={`p-4 cursor-pointer hover:shadow-lg ${assessmentCompletion[index]?.complete ? "bg-green-500" : ""}`} onClick={() => setSelectedChallenge(index)}>
-            <CardContent className="text-center font-semibold">{challenge}</CardContent>
+            <CardContent className="text-center font-semibold cursor-pointer">{challenge}</CardContent>
           </Card>
         ))}
       </div>
 
-      {selectedChallenge !== null && !currentAssessment && (
+      {selectedChallenge !== null && (
         <Dialog open={true} onOpenChange={() => setSelectedChallenge(null)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{challenges[selectedChallenge]}</DialogTitle>
             </DialogHeader>
             
-            {/* Patient Image Added Here, only for the challenge card */}
+            {/* Patient Image */}
             <div className="flex justify-center my-4">
               <Image src="/patient.png" alt="Patient" width={200} height={150} className="rounded-lg shadow-md" />
             </div>
             
             <div className="flex flex-row justify-center gap-4">
-              <Button className={assessmentCompletion[selectedChallenge]?.skin ? "bg-green-500" : ""} onClick={() => startAssessment(selectedChallenge, "skin")}>Skin Assessment</Button>
-              <Button className={assessmentCompletion[selectedChallenge]?.risk ? "bg-green-500" : ""} onClick={() => startAssessment(selectedChallenge, "risk")}>Risk Assessment</Button>
-              <Button className={assessmentCompletion[selectedChallenge]?.injury ? "bg-green-500" : assessmentCompletion[selectedChallenge]?.skin && assessmentCompletion[selectedChallenge]?.risk ? "" : "bg-gray-400 cursor-not-allowed"} 
-                onClick={() => (assessmentCompletion[selectedChallenge]?.skin && assessmentCompletion[selectedChallenge]?.risk) ? startAssessment(selectedChallenge, "injury") : null}
-                disabled={!assessmentCompletion[selectedChallenge]?.skin || !assessmentCompletion[selectedChallenge]?.risk}
-              >
-                Injury Prevention
-              </Button>
+              <Button className={assessmentCompletion[selectedChallenge]?.skin ? "bg-green-500" : ""} onClick={() => setCurrentAssessment({ challenge: selectedChallenge, type: "skin" })}>Skin Assessment</Button>
+              <Button className={assessmentCompletion[selectedChallenge]?.risk ? "bg-green-500" : ""} onClick={() => setCurrentAssessment({ challenge: selectedChallenge, type: "risk" })}>Risk Assessment</Button>
+              <Button className={assessmentCompletion[selectedChallenge]?.injury ? "bg-green-500" : ""} onClick={() => setCurrentAssessment({ challenge: selectedChallenge, type: "injury" })} disabled={!assessmentCompletion[selectedChallenge]?.skin || !assessmentCompletion[selectedChallenge]?.risk}>Injury Prevention</Button>
             </div>
           </DialogContent>
         </Dialog>

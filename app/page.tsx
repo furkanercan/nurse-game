@@ -1,9 +1,5 @@
-import NurseGame from "./components/NurseGame";
+import GamePage from "@/app/components/GamePage";
 
 export default function Home() {
-  return (
-    <div>
-      <NurseGame />
-    </div>
-  );
+  return <GamePage />;
 }

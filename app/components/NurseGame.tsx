@@ -1,6 +1,9 @@
-"use client"; // Required for useState
+"use client";
 
 import React, { useState } from "react";
+import { useAuthState } from "react-firebase-hooks/auth";
+import { auth } from "@/app/firebase";
+import { signOut } from "firebase/auth";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +25,7 @@ const NurseGame = () => {
   const [assessmentCompletion, setAssessmentCompletion] = useState<{ [key: number]: { skin: boolean; risk: boolean; injury: boolean; complete: boolean } }>({});
   const [currentAssessment, setCurrentAssessment] = useState<{ challenge: number; type: string } | null>(null);
   const [clickedItems, setClickedItems] = useState<{ [key: number]: { [key: string]: Set<string> } }>({});
+  const [user] = useAuthState(auth);
 
   const startAssessment = (challengeIndex: number, assessmentType: string) => {
     setCurrentAssessment({ challenge: challengeIndex, type: assessmentType });
@@ -34,44 +38,49 @@ const NurseGame = () => {
     }));
   };
 
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
+
   const handleItemClick = (challengeIndex: number, assessmentType: string, item: string) => {
     setClickedItems((prev) => {
       const updatedSet = new Set(prev[challengeIndex]?.[assessmentType] || []);
       updatedSet.add(item);
-      const newClickedItems = {
+      
+      const requiredItems = assessmentType === "skin" ? 4 : assessmentType === "risk" ? 3 : 2;
+      const isCompleted = updatedSet.size >= requiredItems;
+      
+      setAssessmentCompletion((prev) => {
+        const updatedCompletion = {
+          ...prev,
+          [challengeIndex]: {
+            ...prev[challengeIndex],
+            [assessmentType]: isCompleted,
+          },
+        };
+        
+        if (updatedCompletion[challengeIndex]?.skin && updatedCompletion[challengeIndex]?.risk && updatedCompletion[challengeIndex]?.injury) {
+          updatedCompletion[challengeIndex].complete = true;
+        }
+        return updatedCompletion;
+      });
+      
+      return {
         ...prev,
         [challengeIndex]: {
           ...prev[challengeIndex],
           [assessmentType]: updatedSet,
         },
       };
-      
-      // Mark assessment as complete when all items are clicked
-      const requiredItems = assessmentType === "skin" ? 4 : assessmentType === "risk" ? 3 : 2;
-      if (updatedSet.size === requiredItems) {
-        setAssessmentCompletion((prev) => {
-          const newCompletion = {
-            ...prev,
-            [challengeIndex]: {
-              ...prev[challengeIndex],
-              [assessmentType]: true,
-            },
-          };
-          
-          // Mark the challenge as complete when all assessments are done
-          if (newCompletion[challengeIndex]?.skin && newCompletion[challengeIndex]?.risk && newCompletion[challengeIndex]?.injury) {
-            newCompletion[challengeIndex].complete = true;
-          }
-          return newCompletion;
-        });
-      }
-      return newClickedItems;
     });
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-6">
-      <h1 className="text-2xl font-bold mb-4">Nurse Gamification Challenge</h1>
+      <div className="flex justify-between w-full max-w-4xl mb-4">
+        <h1 className="text-2xl font-bold">Nurse Gamification Challenge</h1>
+        {user && <Button className="bg-red-500 text-white" onClick={handleLogout}>Logout</Button>}
+      </div>
 
       <div className="grid grid-cols-4 gap-4">
         {challenges.map((challenge, index) => (
